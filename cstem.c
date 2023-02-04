@@ -1,0 +1,269 @@
+#include <immintrin.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+
+void print_m256i(__m256i* vector) {
+    int8_t* indexable_vector = (int8_t*)vector;
+    printf("[%hhu", indexable_vector[0]);
+    for (int i = 1; i < 32; ++i) {
+        printf(", %hhu", indexable_vector[i]);
+    }
+    printf("]");
+}
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define NUM_SPECIES 26
+
+enum Size {
+    Small = 'S',
+    Large = 'L',
+};
+
+struct Design {
+    __m256i min_stems;
+    __m256i max_stems;
+    char name;
+    enum Size size;
+    int8_t total;
+};
+struct Design* new_design(char* input) {
+    struct Design* design;
+    int result = posix_memalign((void**) &design, 32, sizeof(struct Design));
+    if (result != 0 || design == NULL) {
+        printf("Could not allocate memory for Design in new_design\n");
+        exit(1);
+    }
+    // Parse name and size from input
+    design->name = *input++;
+    design->size = *input++;
+    // Instantiate the SIMD vectors (32 x char each)
+    design->min_stems = _mm256_setzero_si256();
+    design->max_stems = _mm256_setzero_si256();
+    int8_t* min_stems = (int8_t*) &design->min_stems;
+    int8_t* max_stems = (int8_t*) &design->max_stems;
+    // Parse species from input
+    int8_t species_count = 0;
+    design->total = 0;
+    while (true) {
+        int8_t max = strtoul(input, &input, 10);
+        char species = *input++;
+        if (species == '\0' || species == '\n') {
+            design->total = max;
+            break;
+        }
+        const int8_t species_index = species - 'a';
+        min_stems[species_index] = 1;
+        max_stems[species_index] = max;
+        species_count++;
+    }
+    // Optimization: Set max_stems to the minimum value possible.
+    // 
+    //   Converts "AS6a4" to "AS4a4" and "BS9a2b9" to "BS8a1b9".
+    //
+    int8_t sum_of_max_species = 0;
+    const int8_t max_per_species = 1 + design->total - species_count;
+    for (int8_t species_index = 0; species_index < NUM_SPECIES; species_index++) {
+        const int8_t species_max = max_stems[species_index];
+        const int8_t new_max = min(species_max, max_per_species);
+        max_stems[species_index] = new_max;
+        sum_of_max_species += new_max;
+    }
+    // Optimization: Set min_stems to the maximum value possible
+    //
+    //   Sets the minimum of a in "AS6a4" to 4. Because this design always has 4 stems.
+    //   Sets the minimum of a in "BS9a2b9" to 7. Bit more complex, but we can take the
+    //   sum of all other species---in this case just 'b'---and subtract that from the
+    //   current maximum: 9 (max of a) - 2 (max of b) = 7.
+    //
+    for (int species_index = 0; species_index < NUM_SPECIES; species_index++) {
+        const int8_t species_max = max_stems[species_index];
+        if (species_max != 0) {
+            int8_t species_min = 1;
+            const int8_t sum_of_other_species_max = sum_of_max_species - species_max;
+            if (sum_of_other_species_max < design->total) {
+                species_min = design->total - sum_of_other_species_max;
+            }
+            min_stems[species_index] = species_min;
+        }
+    }
+    return design;
+}
+void print_design(struct Design* design) {
+    printf(
+        "Design {\n    name: '%c',\n    size: '%c',\n    total: %i",
+        design->name,
+        design->size,
+        design->total
+    );
+    printf(",\n    min_stems: ");
+    print_m256i(&design->min_stems);
+    printf(",\n    max_stems: ");
+    print_m256i(&design->max_stems);
+    printf(",\n}\n");
+}
+
+struct Division {
+    // Vector of 32 int8_t values. For simple accounting.
+    __m256i minimal_stock;
+    // This contains the actual stock numbers. On design creation the stock numbers are
+    // redistributed into the simpler saturated_stock vector, where stock values can at
+    // most be 255.
+    // Because we don't want to convert the int16_t vectors into a int8_t vector every
+    // iteration, stock is kept in both places. Only when the saturated_stock reaches
+    // critical lows (e.g. when the amount of stems of a species is below the maximum
+    // possible needed for a bouquet) is the stock redistributed.
+    int16_t stock[NUM_SPECIES];
+    int8_t max_per_species[NUM_SPECIES];
+    struct Design* designs[NUM_SPECIES];
+    int8_t design_insert_index;
+};
+struct Division* new_division() {
+    struct Division* division;
+    int result = posix_memalign((void**) &division, 32, sizeof(struct Division));
+    if (result != 0 || division == NULL) {
+        printf("Could not allocate memory for Division in new_division\n");
+        exit(1);
+    }
+    memset(division->designs, 0, sizeof(struct Design*) * NUM_SPECIES);
+    memset(division->stock, 0, NUM_SPECIES);
+    memset(division->max_per_species, 0, NUM_SPECIES);
+    division->design_insert_index = 0;
+    return division;
+}
+void free_division_designs(struct Division* division) {
+    for (int8_t index = 0; index < NUM_SPECIES; index++) {
+        struct Design* design = division->designs[index];
+        if (design == NULL) break;
+        free(design);
+    }
+}
+
+struct Warehouse {
+    struct Division small;
+    struct Division large;
+};
+struct Warehouse* new_warehouse() {
+    struct Warehouse* warehouse = malloc(sizeof *warehouse);
+    warehouse->small = *new_division();
+    warehouse->large = *new_division();
+    return warehouse;
+}
+void free_warehouse(struct Warehouse* warehouse) {
+    free_division_designs(&warehouse->small);
+    free_division_designs(&warehouse->large);
+    free(warehouse);
+}
+struct Division* warehouse_division(struct Warehouse* warehouse, enum Size size) {
+    if (size == 'S') return &warehouse->small;
+    else if (size == 'L') return &warehouse->large;
+    else return NULL;
+}
+
+void division_add_design(struct Division* division, struct Design* design) {
+    division->designs[division->design_insert_index++] = design;
+}
+void make_division_production_ready(struct Division* division) {
+    int8_t* max_per_species = (int8_t*) &division->max_per_species;
+    for (int8_t design_index = 0; design_index < NUM_SPECIES; design_index++) {
+        struct Design* design = division->designs[design_index];
+        if (design == NULL) break;
+        for (int8_t species_index = 0; species_index < NUM_SPECIES; species_index++) {
+            int8_t* max_stems = (int8_t*) &design->max_stems;
+            int8_t current_species_max = max_stems[species_index];
+            int8_t all_species_max = max_per_species[species_index];
+            if (current_species_max > all_species_max) {
+                max_per_species[species_index] = current_species_max;
+            }
+        }
+    }
+}
+void make_warehouse_production_ready(struct Warehouse* warehouse) {
+    make_division_production_ready(&warehouse->small);
+    make_division_production_ready(&warehouse->large);
+}
+
+void division_add_stem(struct Division* division, char species) {
+    int8_t species_index = species - 'a';
+    // Input stem into the stock
+    division->stock[species_index] += 1;
+    if (division->stock[species_index] > division->max_per_species[species_index]) {
+        return;
+    }
+    ((int8_t*) &division->minimal_stock)[species_index] += 1;
+    // TODO: Add species to design mapping
+    for (int8_t design_index = 0; design_index < NUM_SPECIES; design_index++) {
+        struct Design* design = division->designs[design_index];
+        if (design == NULL) break;
+        __m256i hand = _mm256_min_epi8(division->minimal_stock, design->max_stems);
+        int8_t* h = (int8_t*) &hand;
+        int8_t amount_in_hand = (
+            // Automatically optimized to SIMD operations
+            h[0] + h[1] + h[2] + h[3] + h[4] + h[5] + h[6] + h[7] +
+            h[8] + h[9] + h[10] + h[11] + h[12] + h[13] + h[14] + h[15] +
+            h[16] + h[17] + h[18] + h[19] + h[20] + h[21] + h[22] + h[23] +
+            h[24] + h[25]
+        );
+        if (amount_in_hand < design->total) continue;
+        {
+            // Check if the stock is greater than or equal to the minimum required.
+            __m256i eq = _mm256_cmpeq_epi8(hand, design->min_stems);
+            __m256i gt = _mm256_cmpgt_epi8(hand, design->min_stems);
+            __m256i ge = _mm256_or_si256(eq, gt);
+            __m256i ones = _mm256_set1_epi8(-1);
+            int is_ge = _mm256_testc_si256(ge, ones);
+            if (!is_ge) continue;
+        }
+        int8_t excess_amount = amount_in_hand - design->total;
+        if (excess_amount != 0) {
+            __m256i excess_stems = _mm256_sub_epi8(hand, design->min_stems);
+            for (int8_t species_index = 0; species_index < 26; species_index++) {
+                int8_t stem_amount = ((int8_t*) &excess_stems)[species_index];
+                if (stem_amount == 0) continue;
+                int8_t return_amount = min(excess_amount, stem_amount);
+                h[species_index] -= return_amount;
+                excess_amount -= return_amount;
+                if (excess_amount == 0) break;
+            }
+        }
+        printf("%c%c", design->name, design->size);
+        for (int8_t species_index = 0; species_index < 26; species_index++) {
+            int8_t amount = h[species_index];
+            if (amount == 0) continue;
+            division->stock[species_index] -= amount;
+            ((int8_t*) &division->minimal_stock)[species_index] = min(division->max_per_species[species_index], division->stock[species_index]);
+            printf("%hhu%c", amount, (char) (species_index + 'a'));
+        }
+        puts("");
+        return;
+    }
+}
+
+#define BUFFER_SIZE 84
+int main() {
+    char input_buffer[BUFFER_SIZE];
+    struct Warehouse* warehouse = new_warehouse();
+    // Read designs from stdin
+    while (fgets(input_buffer, BUFFER_SIZE, stdin) != NULL) {
+        if (input_buffer[0] == '\n') break;
+        struct Design* design = new_design(input_buffer);
+        struct Division* division = warehouse_division(warehouse, design->size);
+        division_add_design(division, design);
+    }
+    make_warehouse_production_ready(warehouse);
+    // Read stems from stdin and produce bouquets
+    while (fgets(input_buffer, BUFFER_SIZE, stdin) != NULL) {
+        if (input_buffer[0] == '\n') break;
+        enum Size size = input_buffer[1];
+        struct Division* division = warehouse_division(warehouse, size);
+        division_add_stem(division, input_buffer[0]);
+    }
+
+    // a = 8
+    // b = 
+
+    free_warehouse(warehouse);
+
+    return 0;
+}
