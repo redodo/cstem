@@ -21,3 +21,18 @@ Please see the commands below for the various ways of running cstem:
 | `make dump`        | Compile debug build and output objdump    |
 | `make gdb`         | Compile debug build and run with gdb      |
 | `make valgrind`    | Compile debug build and run with valgrind |
+
+## Benchmark
+
+This benchmark was run on a **Lenovo ThinkPad X1 Carbon Gen 8** with an
+**Intel Core i7-10610U**:
+
+```
+multitime -n100 -q -s0 -i "cat samples/1m.txt" ./cstem
+===> multitime results
+1: -i "cat samples/1m.txt" -q ./cstem
+            Mean        Std.Dev.    Min         Median      Max
+real        0.058       0.001       0.056       0.058       0.065
+user        0.057       0.002       0.051       0.058       0.064
+sys         0.001       0.002       0.000       0.000       0.006
+```
