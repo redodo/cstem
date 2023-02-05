@@ -2,26 +2,21 @@ CC = clang
 CFLAGS = -Wall -Wformat -O3 -mavx -mavx2
 
 build: cstem.c
-	$(CC) $(CFLAGS) -g -o cstem cstem.c
-
-build-release: cstem.c
 	$(CC) $(CFLAGS) -o cstem cstem.c
+
+build-debug: cstem.c
+	$(CC) $(CFLAGS) -g -o cstem cstem.c
 
 run: build
 	@./cstem
 
-gdb: build
+gdb: build-debug
 	@gdb -ex "set confirm off" -ex run cstem
 
-valgrind: build
+valgrind: build-debug
 	@valgrind --track-origins=yes --leak-check=full ./cstem
 
-.PHONY: clean
-
-clean:
-	rm -f cstem
-
-dump: build
+dump: build-debug
 	@objdump \
 		--visualize-jumps=color \
 		--disassembler-color=on \
@@ -35,5 +30,5 @@ dump: build
 test: build
 	@bloomon-challenge-tester --exec ./cstem
 
-benchmark: build-release
+benchmark: build
 	multitime -n100 -q -s0 -i "cat samples/1m.txt" ./cstem
