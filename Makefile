@@ -31,3 +31,9 @@ dump: build
 		--no-show-raw-insn \
 		--line-numbers \
 		cstem | less -R
+
+test: build
+	@bloomon-challenge-tester --exec ./cstem
+
+benchmark: build-release
+	multitime -n100 -q -s0 -i "cat samples/1m.txt" ./cstem
