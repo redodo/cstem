@@ -247,7 +247,7 @@ void division_add_stem(Division *division, char species) {
         int8_t excess_amount = amount_in_hand - design->total;
         if (excess_amount != 0) {
             __m256i excess_stems = _mm256_sub_epi8(hand, design->min_stems);
-            for (int8_t species_index = 0; species_index < 26; species_index++) {
+            for (int8_t species_index = 0; species_index < NUMBER_OF_SPECIES; species_index++) {
                 int8_t stem_amount = ((int8_t *)&excess_stems)[species_index];
                 if (stem_amount == 0) continue;
                 int8_t return_amount = min(excess_amount, stem_amount);
@@ -257,7 +257,7 @@ void division_add_stem(Division *division, char species) {
             }
         }
         printf("%c%c", design->name, design->size);
-        for (int8_t species_index = 0; species_index < 26; species_index++) {
+        for (int8_t species_index = 0; species_index < NUMBER_OF_SPECIES; species_index++) {
             int8_t amount = h[species_index];
             if (amount == 0) continue;
             division->stock[species_index] -= amount;
