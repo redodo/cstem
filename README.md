@@ -24,15 +24,14 @@ Please see the commands below for the various ways of running cstem:
 
 ## Benchmark
 
-This benchmark was run on a **Lenovo ThinkPad X1 Carbon Gen 8** with an
-**Intel Core i7-10610U**:
+This benchmark was run on a **AMD Ryzen 9 7950X**:
 
 ```
 multitime -n100 -q -s0 -i "cat samples/1m.txt" ./cstem
 ===> multitime results
 1: -i "cat samples/1m.txt" -q ./cstem
             Mean        Std.Dev.    Min         Median      Max
-real        0.058       0.001       0.056       0.058       0.065
-user        0.057       0.002       0.051       0.058       0.064
-sys         0.001       0.002       0.000       0.000       0.006
+real        0.036       0.001       0.034       0.036       0.039
+user        0.035       0.002       0.029       0.035       0.037
+sys         0.001       0.001       0.000       0.000       0.007
 ```
