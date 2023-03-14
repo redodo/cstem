@@ -189,7 +189,15 @@ Division* warehouse_division(Warehouse *warehouse, Size size) {
 }
 
 void division_add_design(Division *division, Design *design) {
-    division->designs[division->_designs_insert_index++] = design;
+    int8_t insert_index = division->_designs_insert_index;
+    // Find the correct position to insert the design
+    while (insert_index > 0 && division->designs[insert_index - 1]->total < design->total) {
+        division->designs[insert_index] = division->designs[insert_index - 1];
+        insert_index--;
+    }
+    // Insert the design at the correct position
+    division->designs[insert_index] = design;
+    division->_designs_insert_index++;
 }
 
 void make_division_production_ready(Division *division) {

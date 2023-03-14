@@ -31,7 +31,7 @@ multitime -n100 -q -s0 -i "cat samples/1m.txt" ./cstem
 ===> multitime results
 1: -i "cat samples/1m.txt" -q ./cstem
             Mean        Std.Dev.    Min         Median      Max
-real        0.036       0.001       0.034       0.036       0.039
-user        0.035       0.002       0.029       0.035       0.037
-sys         0.001       0.001       0.000       0.000       0.007
+real        0.035       0.001       0.034       0.035       0.042
+user        0.034       0.002       0.028       0.035       0.039
+sys         0.001       0.002       0.000       0.000       0.006
 ```
